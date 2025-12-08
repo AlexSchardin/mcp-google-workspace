@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 # Configuration from deployment analysis
 CONFIG_FILE_PATH = "config.json"
 LOADING_PATTERN = "env"
-REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth 2.0 client ID from Google Cloud Console","isAppCredential":true},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth 2.0 client secret from Google Cloud Console","isAppCredential":true}]
+REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth 2.0 Client ID for Google Workspace","isAppCredential":true},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth 2.0 Client Secret for Google Workspace","isAppCredential":true}]
 
 
 class handler(BaseHTTPRequestHandler):

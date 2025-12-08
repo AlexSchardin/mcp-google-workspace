@@ -1,20 +1,15 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/mcp.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/mcp.py"
-    }
-  ],
   "functions": {
     "api/mcp.py": {
+      "runtime": "@vercel/python@3.12",
       "maxDuration": 30
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/mcp"
+    }
+  ]
 }
