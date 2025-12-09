@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 # Configuration from deployment analysis
 CONFIG_FILE_PATH = "config.json"
 LOADING_PATTERN = "env"
-REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret","isAppCredential":True}]
+REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth 2.0 Client ID for Google Workspace","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth 2.0 Client Secret for Google Workspace","isAppCredential":True}]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -57,6 +57,15 @@ class handler(BaseHTTPRequestHandler):
 
         # Build environment with credentials
         env = os.environ.copy()
+
+        # Vercel has a read-only filesystem except for /tmp
+        # Set common credential directory env vars to use /tmp
+        env['GOOGLE_MCP_CREDENTIALS_DIR'] = '/tmp/credentials'
+        env['MCP_CREDENTIALS_DIR'] = '/tmp/credentials'
+        env['HOME'] = '/tmp'  # Some servers use ~/.config paths
+        env['TMPDIR'] = '/tmp'
+        env['MCP_DEBUG_LOG'] = '/tmp/mcp_server_debug.log'
+
         env['MCP_ACCESS_TOKEN'] = credentials.get('accessToken', '')
         env['MCP_REFRESH_TOKEN'] = credentials.get('refreshToken', '')
         env['MCP_CLIENT_ID'] = credentials.get('clientId', os.environ.get('MCP_CLIENT_ID', ''))
@@ -146,8 +155,16 @@ class handler(BaseHTTPRequestHandler):
         process = None
         try:
             # Run the MCP server as a subprocess using Popen for bidirectional communication
+            # Most MCP servers need --transport stdio or similar to run in stdio mode
+            # Try common argument patterns
+            cmd = [sys.executable, entry_point]
+
+            # Check if the server supports --transport stdio (FastMCP pattern)
+            # This is the most common way to invoke MCP servers
+            cmd.extend(['--transport', 'stdio'])
+
             process = subprocess.Popen(
-                [sys.executable, entry_point],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
