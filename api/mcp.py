@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 # Configuration from deployment analysis
 CONFIG_FILE_PATH = "config.json"
 LOADING_PATTERN = "env"
-REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID from Google Cloud Console","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret from Google Cloud Console","isAppCredential":True}]
+REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"Google OAuth 2.0 client ID","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"Google OAuth 2.0 client secret","isAppCredential":True}]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -166,12 +166,51 @@ class handler(BaseHTTPRequestHandler):
             # Use a wrapper script that:
             # 1. Patches file operations for Vercel's read-only filesystem
             # 2. Pre-populates credentials before the server starts
-            # 3. Runs the actual MCP server
+            # 3. Prevents OAuth callback servers from starting (can't bind ports on serverless)
+            # 4. Runs the actual MCP server
             wrapper_script = f'''
 import sys
 import os
 import json
 import logging
+import socket
+
+# Patch socket operations to prevent OAuth callback servers from starting
+# Many MCP servers try to start an HTTP server for OAuth callbacks, but we handle OAuth externally
+_original_socket_bind = socket.socket.bind
+_fake_server_sockets = set()
+
+def _patched_socket_bind(self, address):
+    # If trying to bind to common OAuth callback ports (8000, 8080, etc.), fake it
+    if isinstance(address, tuple) and len(address) >= 2:
+        port = address[1]
+        if port in (8000, 8080, 3000, 5000):
+            # Pretend we bound successfully but don't actually bind
+            _fake_server_sockets.add(id(self))
+            return
+    return _original_socket_bind(self, address)
+
+socket.socket.bind = _patched_socket_bind
+
+# Also patch socket.listen and socket.accept for fake sockets
+_original_socket_listen = socket.socket.listen
+def _patched_socket_listen(self, backlog=None):
+    if id(self) in _fake_server_sockets:
+        return  # No-op for fake sockets
+    if backlog is None:
+        return _original_socket_listen(self)
+    return _original_socket_listen(self, backlog)
+socket.socket.listen = _patched_socket_listen
+
+# Patch connect_ex to return success for fake server ports (used by MinimalOAuthServer to check if port is bound)
+_original_socket_connect_ex = socket.socket.connect_ex
+def _patched_socket_connect_ex(self, address):
+    if isinstance(address, tuple) and len(address) >= 2:
+        port = address[1]
+        if port in (8000, 8080, 3000, 5000):
+            return 0  # Return success (port appears to be listening)
+    return _original_socket_connect_ex(self, address)
+socket.socket.connect_ex = _patched_socket_connect_ex
 
 # Patch logging.FileHandler to redirect writes outside /tmp to /tmp
 _original_file_handler_init = logging.FileHandler.__init__
