@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 # Configuration from deployment analysis
 CONFIG_FILE_PATH = "config.json"
 LOADING_PATTERN = "env"
-REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID from Google Cloud","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret","isAppCredential":True}]
+REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID from Google Cloud Console","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret from Google Cloud Console","isAppCredential":True}]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -66,11 +66,17 @@ class handler(BaseHTTPRequestHandler):
         env['TMPDIR'] = '/tmp'
         env['MCP_DEBUG_LOG'] = '/tmp/mcp_server_debug.log'
 
+        # For servers that support external OAuth provider mode (like google_workspace_mcp),
+        # enable it to skip local OAuth callback server startup (can't bind ports on Vercel)
+        env['MCP_ENABLE_OAUTH21'] = 'true'
+        env['EXTERNAL_OAUTH21_PROVIDER'] = 'true'
+
         env['MCP_ACCESS_TOKEN'] = credentials.get('accessToken', '')
         env['MCP_REFRESH_TOKEN'] = credentials.get('refreshToken', '')
         env['MCP_CLIENT_ID'] = credentials.get('clientId', os.environ.get('MCP_CLIENT_ID', ''))
         env['MCP_CLIENT_SECRET'] = credentials.get('clientSecret', os.environ.get('MCP_CLIENT_SECRET', ''))
         env['MCP_API_KEY'] = credentials.get('apiKey', os.environ.get('MCP_API_KEY', ''))
+        env['MCP_USER_EMAIL'] = credentials.get('userEmail', credentials.get('email', ''))
 
         # Add credentials using their configured envName
         for cred in REQUIRED_CREDENTIALS:
@@ -157,11 +163,14 @@ class handler(BaseHTTPRequestHandler):
             # Run the MCP server as a subprocess using Popen for bidirectional communication
             # Most MCP servers need --transport stdio or similar to run in stdio mode
 
-            # Use a wrapper script that patches file operations for Vercel's read-only filesystem
-            # This redirects any file writes outside /tmp to /tmp to prevent EROFS errors
+            # Use a wrapper script that:
+            # 1. Patches file operations for Vercel's read-only filesystem
+            # 2. Pre-populates credentials before the server starts
+            # 3. Runs the actual MCP server
             wrapper_script = f'''
 import sys
 import os
+import json
 import logging
 
 # Patch logging.FileHandler to redirect writes outside /tmp to /tmp
@@ -185,6 +194,54 @@ def _patched_open(file, mode='r', *args, **kwargs):
             file = f'/tmp/{{basename}}'
     return _original_open(file, mode, *args, **kwargs)
 builtins.open = _patched_open
+
+# Pre-populate credentials before server starts
+# This handles servers that expect credentials in files/stores
+def setup_credentials():
+    access_token = os.environ.get('MCP_ACCESS_TOKEN', '')
+    refresh_token = os.environ.get('MCP_REFRESH_TOKEN', '')
+    client_id = os.environ.get('MCP_CLIENT_ID', '') or os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+    client_secret = os.environ.get('MCP_CLIENT_SECRET', '') or os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
+    user_email = os.environ.get('MCP_USER_EMAIL', '')
+
+    if not access_token:
+        return
+
+    # Create credentials directory
+    creds_dir = os.environ.get('GOOGLE_MCP_CREDENTIALS_DIR', '/tmp/credentials')
+    os.makedirs(creds_dir, exist_ok=True)
+
+    # Standard credential format that most OAuth-based servers expect
+    creds_data = {{
+        'token': access_token,
+        'refresh_token': refresh_token,
+        'token_uri': 'https://oauth2.googleapis.com/token',
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'scopes': None,  # Will be populated by server if needed
+    }}
+
+    # Write credentials to multiple locations for maximum compatibility:
+
+    # 1. User-specific credential file (for servers like google_workspace_mcp)
+    if user_email:
+        user_creds_path = os.path.join(creds_dir, f'{{user_email}}.json')
+        with open(user_creds_path, 'w') as f:
+            json.dump(creds_data, f)
+        # Also set USER_GOOGLE_EMAIL for servers that use it
+        os.environ['USER_GOOGLE_EMAIL'] = user_email
+
+    # 2. Default credentials file (for simpler servers)
+    default_creds_path = os.path.join(creds_dir, 'credentials.json')
+    with open(default_creds_path, 'w') as f:
+        json.dump(creds_data, f)
+
+    # 3. token.json format (common in Google API examples)
+    token_path = os.path.join(creds_dir, 'token.json')
+    with open(token_path, 'w') as f:
+        json.dump(creds_data, f)
+
+setup_credentials()
 
 # Now run the actual entry point using runpy to properly set __file__ and __name__
 import runpy
