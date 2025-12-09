@@ -65,8 +65,6 @@ class handler(BaseHTTPRequestHandler):
         env['HOME'] = '/tmp'  # Some servers use ~/.config paths
         env['TMPDIR'] = '/tmp'
         env['MCP_DEBUG_LOG'] = '/tmp/mcp_server_debug.log'
-        # Disable file logging for google_workspace_mcp (Vercel read-only filesystem)
-        env['WORKSPACE_MCP_STATELESS_MODE'] = 'true'
 
         env['MCP_ACCESS_TOKEN'] = credentials.get('accessToken', '')
         env['MCP_REFRESH_TOKEN'] = credentials.get('refreshToken', '')
@@ -158,12 +156,42 @@ class handler(BaseHTTPRequestHandler):
         try:
             # Run the MCP server as a subprocess using Popen for bidirectional communication
             # Most MCP servers need --transport stdio or similar to run in stdio mode
-            # Try common argument patterns
-            cmd = [sys.executable, entry_point]
 
-            # Check if the server supports --transport stdio (FastMCP pattern)
-            # This is the most common way to invoke MCP servers
-            cmd.extend(['--transport', 'stdio'])
+            # Use a wrapper script that patches file operations for Vercel's read-only filesystem
+            # This redirects any file writes outside /tmp to /tmp to prevent EROFS errors
+            wrapper_script = f'''
+import sys
+import os
+import logging
+
+# Patch logging.FileHandler to redirect writes outside /tmp to /tmp
+_original_file_handler_init = logging.FileHandler.__init__
+def _patched_file_handler_init(self, filename, mode='a', encoding=None, delay=False, errors=None):
+    # Redirect any path outside /tmp to /tmp
+    if not filename.startswith('/tmp'):
+        basename = os.path.basename(filename)
+        filename = f'/tmp/{{basename}}'
+    _original_file_handler_init(self, filename, mode, encoding, delay, errors)
+logging.FileHandler.__init__ = _patched_file_handler_init
+
+# Patch builtins.open to redirect writes outside /tmp to /tmp
+import builtins
+_original_open = builtins.open
+def _patched_open(file, mode='r', *args, **kwargs):
+    # Only redirect write operations outside /tmp
+    if isinstance(file, str) and ('w' in mode or 'a' in mode or 'x' in mode):
+        if not file.startswith('/tmp') and not file.startswith('/dev'):
+            basename = os.path.basename(file)
+            file = f'/tmp/{{basename}}'
+    return _original_open(file, mode, *args, **kwargs)
+builtins.open = _patched_open
+
+# Now run the actual entry point
+sys.argv = ['{entry_point}', '--transport', 'stdio']
+exec(open('{entry_point}').read())
+'''
+
+            cmd = [sys.executable, '-c', wrapper_script]
 
             process = subprocess.Popen(
                 cmd,
