@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 # Configuration from deployment analysis
 CONFIG_FILE_PATH = "config.json"
 LOADING_PATTERN = "env"
-REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID from Google Cloud Console","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret from Google Cloud Console","isAppCredential":True}]
+REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID from Google Cloud","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret from Google Cloud","isAppCredential":True}]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -186,9 +186,10 @@ def _patched_open(file, mode='r', *args, **kwargs):
     return _original_open(file, mode, *args, **kwargs)
 builtins.open = _patched_open
 
-# Now run the actual entry point
+# Now run the actual entry point using runpy to properly set __file__ and __name__
+import runpy
 sys.argv = ['{entry_point}', '--transport', 'stdio']
-exec(open('{entry_point}').read())
+runpy.run_path('{entry_point}', run_name='__main__')
 '''
 
             cmd = [sys.executable, '-c', wrapper_script]
