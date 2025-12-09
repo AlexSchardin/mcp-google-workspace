@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 # Configuration from deployment analysis
 CONFIG_FILE_PATH = "config.json"
 LOADING_PATTERN = "env"
-REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"Google OAuth 2.0 client ID","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"Google OAuth 2.0 client secret","isAppCredential":True}]
+REQUIRED_CREDENTIALS = [{"name":"clientId","envName":"GOOGLE_OAUTH_CLIENT_ID","description":"OAuth client ID from Google Cloud Console","isAppCredential":True},{"name":"clientSecret","envName":"GOOGLE_OAUTH_CLIENT_SECRET","description":"OAuth client secret from Google Cloud Console","isAppCredential":True}]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -65,6 +65,8 @@ class handler(BaseHTTPRequestHandler):
         env['HOME'] = '/tmp'  # Some servers use ~/.config paths
         env['TMPDIR'] = '/tmp'
         env['MCP_DEBUG_LOG'] = '/tmp/mcp_server_debug.log'
+        # Disable file logging for google_workspace_mcp (Vercel read-only filesystem)
+        env['WORKSPACE_MCP_STATELESS_MODE'] = 'true'
 
         env['MCP_ACCESS_TOKEN'] = credentials.get('accessToken', '')
         env['MCP_REFRESH_TOKEN'] = credentials.get('refreshToken', '')
