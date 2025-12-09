@@ -26,8 +26,6 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
-
         # Read request body
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8')
@@ -36,6 +34,7 @@ class handler(BaseHTTPRequestHandler):
             json_body = json.loads(body)
         except json.JSONDecodeError as e:
             self.send_response(400)
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({
@@ -134,6 +133,7 @@ class handler(BaseHTTPRequestHandler):
 
         if not entry_point:
             self.send_response(500)
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({
@@ -214,6 +214,7 @@ class handler(BaseHTTPRequestHandler):
                     parsed = json.loads(line)
                     if isinstance(parsed, dict) and 'jsonrpc' in parsed:
                         self.send_response(200)
+                        self.send_header('Access-Control-Allow-Origin', '*')
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
                         self.wfile.write(json.dumps(parsed).encode())
@@ -223,6 +224,7 @@ class handler(BaseHTTPRequestHandler):
 
             # No valid response found
             self.send_response(500)
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             stderr_data = ''.join(stderr_lines)
@@ -239,6 +241,7 @@ class handler(BaseHTTPRequestHandler):
 
         except Exception as e:
             self.send_response(500)
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({
